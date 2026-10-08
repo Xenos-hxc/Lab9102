@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: local-root-demo-change-me
+      MYSQL_DATABASE: lab9102_demo
+      MYSQL_USER: demo
+      MYSQL_PASSWORD: local-demo-change-me
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/demo.sql:/docker-entrypoint-initdb.d/02-demo.sql:ro
+
+volumes:
+  mysql-data:

@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.mapper.ForumPostMapper">
+
+    <sql id="postColumns">
+        p.id,
+        p.author_id AS authorId,
+        p.category_id AS categoryId,
+        p.title,
+        p.summary,
+        p.content,
+        p.cover_url AS coverUrl,
+        p.visibility,
+        p.status,
+        p.reject_reason AS rejectReason,
+        p.view_count AS viewCount,
+        p.like_count AS likeCount,
+        p.favorite_count AS favoriteCount,
+        p.is_top AS isTop,
+        p.is_featured AS isFeatured,
+        p.created_at AS createdAt,
+        p.updated_at AS updatedAt,
+        p.submitted_at AS submittedAt,
+        p.published_at AS publishedAt,
+        m.name AS authorName,
+        m.username AS authorUsername,
+        m.identity AS authorIdentity,
+        m.pictureUrl AS authorAvatar,
+        c.name AS categoryName,
+        (
+            SELECT GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ',')
+            FROM forum_post_tag pt
+            INNER JOIN forum_tag t ON t.id = pt.tag_id
+            WHERE pt.post_id = p.id AND t.status = 1
+        ) AS tagNames
+    </sql>
+
+    <select id="selectPostList" resultType="java.util.LinkedHashMap">
+        SELECT <include refid="postColumns"/>
+        FROM forum_post p
+        INNER JOIN member m ON m.id = p.author_id
+        LEFT JOIN forum_category c ON c.id = p.category_id
+        WHERE p.deleted = 0
+        <choose>
+            <when test="adminMode">
+                <if test="status != null and status != ''">
+                    AND p.status = #{status}
+                </if>
+            </when>
+            <when test="authorId != null">
+                AND p.author_id = #{authorId}
+                <if test="status != null and status != ''">
+                    AND p.status = #{status}
+                </if>
+            </when>
+            <otherwise>
+                AND p.status = 'PUBLISHED'
+                <if test="!includeMemberOnly">
+                    AND p.visibility = 'PUBLIC'
+                </if>
+            </otherwise>
+        </choose>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                p.title LIKE CONCAT('%', #{keyword}, '%')
+                OR p.summary LIKE CONCAT('%', #{keyword}, '%')
+                OR m.name LIKE CONCAT('%', #{keyword}, '%')
+                OR EXISTS (
+                    SELECT 1
+                    FROM forum_post_tag search_pt
+                    INNER JOIN forum_tag search_t ON search_t.id = search_pt.tag_id
+                    WHERE search_pt.post_id = p.id
+                      AND search_t.name LIKE CONCAT('%', #{keyword}, '%')
+                )
+            )
+        </if>
+        <if test="categoryId != null">
+            AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY
+        <choose>
+            <when test="sort == 'popular'">
+                p.is_top DESC, (p.view_count + p.like_count * 5 + p.favorite_count * 8) DESC, p.published_at DESC
+            </when>
+            <when test="sort == 'favorite'">
+                p.is_top DESC, p.favorite_count DESC, p.published_at DESC
+            </when>
+            <when test="sort == 'featured'">
+                p.is_featured DESC, p.is_top DESC, p.published_at DESC
+            </when>
+            <otherwise>
+                p.is_top DESC, p.published_at DESC, p.updated_at DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="selectPostDetail" resultType="java.util.LinkedHashMap">
+        SELECT <include refid="postColumns"/>
+        FROM forum_post p
+        INNER JOIN member m ON m.id = p.author_id
+        LEFT JOIN forum_category c ON c.id = p.category_id
+        WHERE p.id = #{id} AND p.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="selectRelatedPosts" resultType="java.util.LinkedHashMap">
+        SELECT
+            p.id,
+            p.title,
+            p.summary,
+            p.cover_url AS coverUrl,
+            p.published_at AS publishedAt,
+            p.view_count AS viewCount,
+            m.name AS authorName,
+            c.name AS categoryName
+        FROM forum_post p
+        INNER JOIN member m ON m.id = p.author_id
+        LEFT JOIN forum_category c ON c.id = p.category_id
+        WHERE p.deleted = 0
+          AND p.status = 'PUBLISHED'
+          AND p.id != #{excludeId}
+          AND p.category_id = #{categoryId}
+        <if test="!includeMemberOnly">
+          AND p.visibility = 'PUBLIC'
+        </if>
+        ORDER BY p.is_featured DESC, p.published_at DESC
+        LIMIT 4
+    </select>
+
+    <select id="selectCategoryStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            c.id,
+            c.name,
+            c.description,
+            c.sort_order AS sortOrder,
+            COUNT(p.id) AS postCount
+        FROM forum_category c
+        LEFT JOIN forum_post p
+          ON p.category_id = c.id
+         AND p.status = 'PUBLISHED'
+         AND p.deleted = 0
+        WHERE c.status = 1
+        GROUP BY c.id, c.name, c.description, c.sort_order
+        ORDER BY c.sort_order ASC, c.id ASC
+    </select>
+
+    <select id="selectContributorStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            m.id,
+            m.name,
+            m.identity,
+            m.pictureUrl AS avatar,
+            COUNT(p.id) AS postCount
+        FROM forum_post p
+        INNER JOIN member m ON m.id = p.author_id
+        WHERE p.status = 'PUBLISHED' AND p.deleted = 0
+        GROUP BY m.id, m.name, m.identity, m.pictureUrl
+        ORDER BY postCount DESC, m.id ASC
+        LIMIT 6
+    </select>
+</mapper>
